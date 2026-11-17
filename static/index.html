@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Terminal Tiket</title>
+<style>
+:root{--ink:#0c1a2b;--board:#ffc93c;--mist:#e8eef5;--paper:#fff;--ok:#17806f;--bad:#c7452a;--line:#cfd9e5;--mute:#5b6b7d}
+*{box-sizing:border-box}body{margin:0;background:var(--mist);color:var(--ink);font:16px/1.5 Bahnschrift,"DIN Alternate","Segoe UI",system-ui,sans-serif}
+header{background:var(--ink);color:#fff;padding:20px 24px 0}
+.top{max-width:980px;margin:auto;display:flex;flex-wrap:wrap;gap:16px;justify-content:space-between;align-items:center}
+h1{margin:0;font-size:28px;letter-spacing:.5px}h1 b{color:var(--board)}
+.who{display:flex;gap:8px;flex-wrap:wrap}.who button{background:#17304d;color:#cfe0f3;border:1px solid #284a70;border-radius:999px;padding:6px 14px;cursor:pointer;font:inherit}
+.who button[aria-pressed=true]{background:var(--board);color:var(--ink);border-color:var(--board);font-weight:700}
+nav{max-width:980px;margin:18px auto 0;display:flex;gap:4px;flex-wrap:wrap}
+nav button{background:transparent;color:#9fb6d0;border:0;border-bottom:4px solid transparent;padding:10px 16px;font:inherit;cursor:pointer}
+nav button[aria-selected=true]{color:#fff;border-color:var(--board)}
+main{max-width:980px;margin:24px auto;padding:0 16px 60px}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--board);outline-offset:2px}
+.panel{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:18px;margin-bottom:18px}
+.row{display:flex;gap:12px;flex-wrap:wrap;align-items:end}label{display:grid;gap:4px;font-size:14px;color:var(--mute)}
+input,select{font:inherit;padding:9px 10px;border:1px solid var(--line);border-radius:6px;min-width:150px;background:#fff;color:var(--ink)}
+.btn{background:var(--ink);color:#fff;border:0;border-radius:6px;padding:10px 18px;font:inherit;font-weight:700;cursor:pointer}
+.btn:hover{background:#17304d}.btn.alt{background:var(--board);color:var(--ink)}.btn.danger{background:var(--bad)}.btn[disabled]{opacity:.4;cursor:not-allowed}
+.pass{display:grid;grid-template-columns:1fr auto;background:var(--paper);border:1px solid var(--line);border-radius:10px;margin-bottom:12px;overflow:hidden}
+.pass .l{padding:14px 18px;display:grid;gap:4px}.pass .r{padding:14px 18px;border-left:2px dashed var(--line);display:grid;gap:6px;align-content:center;justify-items:end;min-width:190px}
+.route{display:flex;align-items:center;gap:14px;font-size:26px;font-weight:700;font-variant-numeric:tabular-nums}
+.route small{display:block;font-size:13px;font-weight:400;color:var(--mute)}.route .arr{color:var(--mute);font-size:18px}
+.meta{color:var(--mute);font-size:14px}.price{font-size:22px;font-weight:700}
+.badge{display:inline-block;padding:2px 10px;border-radius:999px;font-size:13px;font-weight:700;background:var(--mist)}
+.badge.Booked{background:#fff1c2}.badge.Confirmed{background:#cdeee7;color:var(--ok)}.badge.Cancelled{background:#f7d9d2;color:var(--bad)}.badge.Waiting{background:#dbe6f6}
+.empty{padding:28px;text-align:center;color:var(--mute);border:2px dashed var(--line);border-radius:10px}
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:12px 20px;border-radius:8px;opacity:0;pointer-events:none;transition:opacity .2s;max-width:90%}
+#toast.on{opacity:1}#toast.err{background:var(--bad)}
+@media(max-width:600px){.pass{grid-template-columns:1fr}.pass .r{border-left:0;border-top:2px dashed var(--line);justify-items:start}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style></head><body>
+<header><div class="top"><h1>Terminal <b>Tiket</b></h1>
+<div class="who" id="who" role="group" aria-label="Masuk sebagai"></div></div>
+<nav id="nav" role="tablist"></nav></header>
+<main id="main"></main><div id="toast" role="status"></div>
+<script>
+const $=s=>document.querySelector(s), rp=n=>"Rp"+n.toLocaleString("id-ID");
+const ROLES={ani:{nama:"Ani (Pengguna)",tabs:["Cari & Pesan","Tiket saya"]},budi:{nama:"Budi (Member)",tabs:["Cari & Pesan","Tiket saya"]},
+ citra:{nama:"Citra (Manajer Travel)",tabs:["Status booking","Otorisasi tiket"]}};
+let role="ani",tab=0;
+async function call(url,body){const r=await fetch(url,body?{method:"POST",body:JSON.stringify(body)}:{});const d=await r.json();if(!r.ok)throw new Error(d.error);return d}
+function toast(t,err){const e=$("#toast");e.textContent=t;e.className="on"+(err?" err":"");clearTimeout(toast.t);toast.t=setTimeout(()=>e.className="",3200)}
+const guard=f=>async(...a)=>{try{await f(...a)}catch(e){toast(e.message,1)}};
+const badge=s=>`<span class="badge ${s.split(" ")[0]}">${s}</span>`;
+function chrome(){
+ $("#who").innerHTML=Object.entries(ROLES).map(([k,v])=>`<button aria-pressed="${k==role}" onclick="setRole('${k}')">${v.nama}</button>`).join("");
+ $("#nav").innerHTML=ROLES[role].tabs.map((t,i)=>`<button role="tab" aria-selected="${i==tab}" onclick="setTab(${i})">${t}</button>`).join("");
+ const name=ROLES[role].tabs[tab];
+ ({"Cari & Pesan":vCari,"Tiket saya":vTiket,"Status booking":vStatus,"Otorisasi tiket":vOto})[name]();
+}
+function setRole(r){role=r;tab=0;chrome()} function setTab(i){tab=i;chrome()}
+function flight(p,act){return `<div class="pass"><div class="l"><div class="route"><div>${p.berangkat}<small>${p.asal} (${p.kode_asal})</small></div><span class="arr">✈</span><div>${p.tiba}<small>${p.tujuan} (${p.kode_tujuan})</small></div></div>
+ <div class="meta">${p.maskapai} · ${p.nomor} · ${p.tanggal}</div></div><div class="r"><div class="price">${rp(p.harga)}</div><div class="meta">${p.kursi} kursi tersisa</div>${act||""}</div></div>`}
+function vCari(){
+ $("#main").innerHTML=`<div class="panel"><div class="row"><label>Tujuan<select id="tj" multiple size="4"><option value="CGK" selected>Jakarta (CGK)</option><option value="DPS">Denpasar (DPS)</option><option value="KNO">Medan (KNO)</option></select></label>
+ <label>Tanggal<input id="tg" type="date" value="2026-12-20"></label><button class="btn alt" id="go">Cari penerbangan</button></div></div><div id="hasil"></div>`;
+ $("#go").onclick=guard(async()=>{const tj=[...$("#tj").selectedOptions].map(o=>o.value).join(",");
+  const r=await call(`/api/penerbangan?tujuan=${tj}&tanggal=${$("#tg").value}`);
+  $("#hasil").innerHTML=r.length?r.map(p=>flight(p,`<button class="btn" ${p.kursi?"":"disabled"} onclick="pesan('${p.nomor}')">${p.kursi?"Pesan tiket":"Kursi habis"}</button>`)).join(""):`<div class="empty">Penerbangan tidak ditemukan. Ubah tujuan atau tanggal.</div>`});
+ $("#go").click()}
+const pesan=guard(async n=>{const b=await call("/api/pesan",{pemesan:role,nomor:n});toast(`Dipesan. Kode booking ${b.kode}`);$("#go").click()});
+const batalkan=guard(async k=>{await call("/api/batalkan",{pemesan:role,kode:k});toast("Pesanan dibatalkan");vTiket()});
+const bkItem=(b,act)=>`<div class="panel"><div class="row" style="justify-content:space-between"><b>${b.kode}</b>${badge(b.status)}</div>${b.tiket.map(t=>flight(t.penerbangan)).join("")}<div class="row" style="justify-content:space-between"><span class="meta">Pemesan: ${b.pemesan} · Total ${rp(b.total)}</span>${act||""}</div></div>`;
+async function vTiket(){const r=await call("/api/pesanan?pemesan="+role);
+ $("#main").innerHTML=r.length?r.map(b=>bkItem(b,b.status!="Cancelled"?`<button class="btn danger" onclick="batalkan('${b.kode}')">Batalkan pesanan</button>`:"")).join(""):`<div class="empty">Belum ada pesanan. Cari penerbangan lalu pesan tiket.</div>`}
+async function vStatus(){
+ $("#main").innerHTML=`<div class="panel"><label>Filter status<select id="st"><option value="">Semua status</option><option>Booked</option><option>Waiting for Payment</option><option>Confirmed</option><option>Cancelled</option></select></label></div><div id="hasil"></div>`;
+ const load=guard(async()=>{const r=await call("/api/status?status="+encodeURIComponent($("#st").value));$("#hasil").innerHTML=r.length?r.map(b=>bkItem(b)).join(""):`<div class="empty">Tidak ada booking dengan status ini.</div>`});
+ $("#st").onchange=load;load()}
+function vOto(){
+ $("#main").innerHTML=`<div class="panel"><div class="row"><label>Kode booking reference<input id="kd" placeholder="mis. BK000001"></label><button class="btn alt" id="go">Otorisasi</button></div></div><div id="hasil"></div>`;
+ $("#go").onclick=async()=>{try{const b=await call("/api/otorisasi",{kode:$("#kd").value});$("#hasil").innerHTML=bkItem(b)}catch(e){$("#hasil").innerHTML="";toast(e.message+". Periksa lalu masukkan ulang.",1)}}}
+chrome();
+</script></body></html>
